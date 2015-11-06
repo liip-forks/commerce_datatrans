@@ -19,6 +19,10 @@ function commerce_datatrans_payment_processing($order_id, $payment_method_id, $p
   // First check if the request comes from Datatrans.
   if (isset($datatrans['status']) && $order->data['payment_redirect_key'] == $payment_key) {
     switch ($datatrans['status']) {
+      case 'cancel' :
+        // Go back to the checkout page we came from.
+        drupal_goto(commerce_checkout_order_uri($order));
+        break;
       case 'success':
         // Get payment method.
         $payment_method = commerce_payment_method_instance_load($payment_method_id);
