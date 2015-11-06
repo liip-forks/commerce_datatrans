@@ -59,6 +59,7 @@ function commerce_datatrans_settings_form($settings = NULL) {
     'req_type' => 'CAA',
     'payment_mode' => 'redirect',
     'security' => array(),
+    'payment_methods' => [],
   );
   if (!isset($settings['security']) || !is_array($settings['security'])) {
     $settings['security'] = array();
@@ -105,6 +106,48 @@ function commerce_datatrans_settings_form($settings = NULL) {
     ),
     '#default_value' => $settings['payment_mode'],
     '#description' => t('Supports redirect and lightbox payment modes, !payment_pages you can find more information about it. Note: Lightbox mode requires at least JQuery 1.8 or higher.', array('!payment_pages' => l(t('here'), 'https://www.datatrans.ch/en/technics/payment-apis/payment-pages/', array('external' => TRUE, 'attributes' => array('target'=>'_blank'))))),
+  );
+
+  $form['payment_methods'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Payment Methods'),
+    '#options' => array(
+      'VIS' => t('VISA'),
+      'ECA' => t('MasterCard'),
+      'AMX' => t('American Express'),
+      'BPY' => t('Billpay'),
+      'DIN' => t('Diners Club'),
+      'DIS' => t('Discover'),
+      'DEA' => t('*iDeal'),
+      'DIB' => t('SOFORT Überweisung'),
+      'DII' => t('iDEAL via SOFORT Überweisung'),
+      'DNK' => t('Dankort'),
+      'DVI' => t('Deltavista'),
+      'ELV' => t('SEPA Direct Debit / ELV Lastschrift'),
+      'ESY' => t('Swisscom Easypay'),
+      'JCB' => t('JCB'),
+      'JEL' => t('Jelmoli Bonus Card'),
+      'MAU' => t('Maestro'),
+      'MDP' => t('Migros Bank Payment'),
+      'MFA' => t('MFGroup Check Out (Credit Check)'),
+      'MFG' => t('MFGroup Financial Request (authorization)'),
+      'MFX' => t('MFGroup Easy integration'),
+      'MMS' => t('Mediamarkt Shopping Card'),
+      'MNB' => t('Moneybookers only with reqtype CAA'),
+      'MYO' => t('Manor MyOne Card'),
+      'PAP' => t('PayPal'),
+      'PEF' => t('Swiss PostFinance – PostFinance E-Finance'),
+      'PFC' => t('Swiss PostFinance – PostFinance Card'),
+      'PSC' => t('Paysafecard'),
+      'PYL' => t('Payolution Installments'),
+      'PYO' => t('Payolution Invoice'),
+      'REK' => t('Reka Card'),
+      'SWB' => t('SwissBilling'),
+      'TWI' => t('TWINT Wallet'),
+      'MPW' => t('MasterPass Wallet'),
+    ),
+    '#default_value' => $settings['payment_methods'],
+    '#description' => t('Selecting none will make all payment methods available. Note that many of the payment methods might need additional configuration at the service provider\'s site to make them appear.'),
   );
 
   $form['security'] = array(
@@ -207,6 +250,21 @@ function commerce_datatrans_redirect_form($form, &$form_state, $order, $payment_
     '#type' => 'hidden',
     '#value' => $order->order_id,
   );
+  // Payment methods.
+  // This seems to be the form API equivalent of the nonstandard $_GET usage
+  // for the paymentmethod parameter: for several payment methods we need
+  // to do ?paymentmethod=VIS&paymentmethod=ECA.
+  // @see https://www.datatrans.ch/showcase/authorisation/redirect-mode
+  if (isset($payment_method['settings']['payment_methods'])) {
+    foreach ($payment_method['settings']['payment_methods'] as $pm) {
+      if (!empty($pm)) {
+        $form[$pm]['paymentmethod'] = array(
+          '#type' => 'hidden',
+          '#value' => $pm,
+        );
+      }
+    }
+  }
 
   switch ($payment_method['settings']['security']['security_level']) {
     case 1:
@@ -398,6 +456,11 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           $sign = hash_hmac('md5', $payment_method['settings']['merchant_id'] . $total[0]['amount'] . $total[0]['currency_code'] . $order->order_id, pack("H*", $payment_method['settings']['security']['hmac_key']));
           break;
       }
+      // Get enabled payment methods.
+      $paymentmethod = '';
+      if (isset($payment_method['settings']['payment_methods'])) {
+        $paymentmethod = implode(',', array_filter($payment_method['settings']['payment_methods']));
+      }
 
       // Pay button.
       $form['pay'] = array(
@@ -414,6 +477,7 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           'data-reqtype'    => $payment_method['settings']['req_type'],
           'data-refno'       => $order->order_id,
           'data-language'    => $language->language,
+          'data-paymentmethod' => $paymentmethod,
           'data-success-url' => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
           'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
           'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
