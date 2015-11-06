@@ -667,3 +667,68 @@ function _commerce_datatrans_settings_ok($settings) {
 
   return $ok;
 }
+
+/**
+ * API function to perform a refund request for a transaction.
+ *
+ * @param object $transaction
+ *   The transaction entity object we refund.
+ * @param string $amount
+ *   The amount to refund. If NULL, $transaction->amount will be used.
+ *   This is in minor currency units, that is e.g. in case of USD 200 means
+ *   2 dollars.
+ *
+ * @return An object returned by drupal_http_request().
+ */
+function commerce_datatrans_refund_request($transaction, $amount = NULL) {
+  // Create some variables for the request xml.
+  $payment_method = commerce_payment_method_instance_load($transaction->instance_id);
+  $merchant_id = $payment_method['settings']['merchant_id'];
+  // If amount is not set or is bigger than the transaction amount, we set it
+  // to the transaction amount. (We can't refund more than originally paid.)
+  if (empty($amount) || ($amount > $transaction->amount) ) {
+    $amount = $transaction->amount;
+  }
+  // The digital signature. See chapter "6.2.4 Creation of the digital
+  // signature (value of parameter sign) in the request" in
+  // https://pilot.datatrans.biz/showcase/doc/Technical_Implementation_Guide.pdf
+  $sign = hash_hmac('md5', $merchant_id . $amount . $transaction->currency_code . $transaction->order_id, pack("H*", $payment_method['settings']['security']['hmac_key']));
+  // Build the xml.
+  $writer = new XMLWriter();
+  $writer->openMemory();
+  $writer->setIndent(2);
+  $writer->startElement('paymentService');
+  $writer->writeAttribute('version', '1');
+    $writer->startElement('body');
+      $writer->writeAttribute('merchantId', $merchant_id);
+      $writer->startElement('transaction');
+        $writer->writeAttribute('refno', $transaction->order_id);
+        $writer->startElement('request');
+          $writer->writeElement('amount', $amount);
+          $writer->writeElement('currency', $transaction->currency_code);
+          $writer->writeElement('uppTransactionId', $transaction->remote_id);
+          $writer->writeElement('transtype', '06');
+          $writer->writeElement('sign', $sign);
+        $writer->endElement();
+      $writer->endElement();
+    $writer->endElement();
+  $writer->endElement();
+  $writer->endDocument();
+  $xml = $writer->flush();
+
+  if (strpos($payment_method['settings']['up_start_url'], 'pilot') !== FALSE) {
+    $url = 'https://pilot.datatrans.biz/upp/jsp/XML_processor.jsp';
+  }
+  else {
+    $url = 'https://payment.datatrans.biz/upp/jsp/XML_processor.jsp';
+  }
+  $options = [
+    'headers' => [
+      'Content-Type' => 'text/xml;charset=UTF-8',
+    ],
+    'data' => $xml,
+    'method' => 'POST',
+    'timeout' => 30,
+  ];
+  return drupal_http_request($url, $options);
+}
