@@ -633,7 +633,6 @@ function _commerce_datatrans_map_error_code($code) {
       break;
 
     default:
-      break;
       $message = t('Datatrans transaction failed: undefined error.');
       break;
   }
