@@ -150,6 +150,13 @@ function commerce_datatrans_settings_form($settings = NULL) {
     '#description' => t('Selecting none will make all payment methods available. Note that many of the payment methods might need additional configuration at the service provider\'s site to make them appear.'),
   );
 
+  $form['theme_configuration'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Theme configuration'),
+    '#default_value' => empty($settings['theme_configuration']) ? '' : $settings['theme_configuration'],
+    '#description' => t('The value of the <a href="@link">themeConfiguration</a> parameter without the curly braces. E.g. \'logoType\': \'none\'.', ['@link' => 'https://www.datatrans.ch/showcase/authorisation/redirect-mode'])
+  );
+
   $form['security'] = array(
     '#type' => 'fieldset',
     '#title' => t('Security Settings'),
@@ -482,6 +489,7 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
           'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
           'data-sign'        => $sign,
+          'data-theme-configuration' => '{' . str_replace('"', '\'', $payment_method['settings']['theme_configuration']) . '}',
         ),
         '#attached'   => array(
           'js' => array(
