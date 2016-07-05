@@ -404,6 +404,11 @@ function _commerce_datatrans_transaction_save($payment_method, $order, $data, $s
   unset($transaction->data['error handled']);
 
   commerce_payment_transaction_save($transaction);
+  // Since commerce_payment_pane_checkout_form_submit() does not get called
+  // for datatrans checkout, we need to set the order payment_method here.
+  // (The order payment_method is needed in
+  // commerce_payment_rules_compare_selected_payment_method().)
+  $order->data['payment_method'] = $transaction->instance_id;
 }
 
 /**
