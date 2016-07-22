@@ -11,10 +11,10 @@
  * Implements hook_menu().
  */
 function commerce_datatrans_menu() {
-  $items['commerce_datatrans/processing/%/%/%'] = array(
+  $items['commerce_datatrans/processing/%/%/%/%'] = array(
     'title' => 'Datatrans payment processing',
     'page callback' => 'commerce_datatrans_payment_processing',
-    'page arguments' => array(2, 3, 4),
+    'page arguments' => array(2, 3, 4, 5),
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
     'file' => 'commerce_datatrans.pages.inc',
@@ -475,6 +475,16 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
       }
 
       // Pay button.
+      // In case of error we want to stay on the same page. We have two cases:
+      // 1. We are loading the "Pay with Datatrans" button with the main page
+      // request.
+      // 2. We are loading the button via AJAX.
+      if (strpos($_SERVER['REQUEST_URI'], 'system/ajax') === FALSE) {
+        $error_redirect_url = urlencode($_GET['q']);
+      }
+      else {
+        $error_redirect_url = urlencode($_SERVER['HTTP_REFERER']);
+      }
       $form['pay'] = array(
         '#type'       => 'submit',
         '#value'      => t('Pay with Datatrans'),
@@ -490,9 +500,9 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           'data-refno'       => $order->order_id,
           'data-language'    => $language->language,
           'data-paymentmethod' => $paymentmethod,
-          'data-success-url' => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
-          'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
-          'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+          'data-success-url' => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
+          'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
+          'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
           'data-sign'        => $sign,
           'data-theme-configuration' => '{' . str_replace('"', '\'', $payment_method['settings']['theme_configuration']) . '}',
         ),

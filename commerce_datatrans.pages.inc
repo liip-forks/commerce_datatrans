@@ -12,7 +12,7 @@
  * @param $payment_method_id  Commerce payment method ID.
  * @param $payment_key        URL key used to validate request.
  */
-function commerce_datatrans_payment_processing($order_id, $payment_method_id, $payment_key) {
+function commerce_datatrans_payment_processing($order_id, $payment_method_id, $payment_key, $error_redirect_url = '') {
   $order     = commerce_order_load($order_id);
   $datatrans = $_POST;
 
@@ -38,10 +38,21 @@ function commerce_datatrans_payment_processing($order_id, $payment_method_id, $p
         }
         break;
       default:
+        // Try to redirect back to the payment site in case of invalid credit
+        // card data.
         $error_msg = _commerce_datatrans_map_error_code($datatrans['errorCode']);
         watchdog('commerce_datatrans', $error_msg, $datatrans, WATCHDOG_ERROR);
         drupal_set_message($error_msg, 'error');
-        break;
+        $url = urldecode($error_redirect_url);
+        $parsed_url = parse_url($url);
+        if (isset($parsed_url['host'])) {
+          global $base_url;
+          // Redirecting to an external site is insecure.
+          if ($base_url != $parsed_url['scheme'] . '://' . $parsed_url['host']) {
+            drupal_goto('/');
+          }
+        }
+        drupal_goto($url);
     }
   }
   else {
