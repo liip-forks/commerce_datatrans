@@ -1,5 +1,13 @@
 <?php
 
+// Test and production request urls and javascripts.
+define('COMMERCE_DATATRANS_START_URL_TEST', 'https://pilot.datatrans.biz/upp/jsp/upStart.jsp');
+define('COMMERCE_DATATRANS_START_URL_PROD', 'https://payment.datatrans.biz/upp/jsp/upStart.jsp');
+define('COMMERCE_DATATRANS_SCRIPT_URL_TEST', 'https://pilot.datatrans.biz/upp/payment/js/datatrans-1.0.2.js');
+define('COMMERCE_DATATRANS_SCRIPT_URL_PROD', 'https://payment.datatrans.biz/upp/payment/js/datatrans-1.0.2.js');
+define('COMMERCE_DATATRANS_SETTLEMENT_URL_TEST', 'https://pilot.datatrans.biz/upp/jsp/XML_processor.jsp');
+define('COMMERCE_DATATRANS_SETTLEMENT_URL_PROD', 'https://payment.datatrans.biz/upp/jsp/XML_processor.jsp');
+
 /**
  * @file
  * Process payments using Datatrans Payment Page.
@@ -55,7 +63,7 @@ function commerce_datatrans_settings_form($settings = NULL) {
 
   $settings += array(
     'merchant_id' => '1000011011',
-    'up_start_url' => 'https://pilot.datatrans.biz/upp/jsp/upStart.jsp',
+    'environment' => 'test',
     'req_type' => 'CAA',
     'payment_mode' => 'redirect',
     'security' => array(),
@@ -79,10 +87,14 @@ function commerce_datatrans_settings_form($settings = NULL) {
     '#required' => TRUE,
   );
 
-  $form['up_start_url'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Start URL'),
-    '#default_value' => $settings['up_start_url'],
+  $form['environment'] = array(
+    '#type' => 'radios',
+    '#title' => t('Environment'),
+    '#options' => array(
+      'test' => t('Test'),
+      'prod' => t('Production'),
+    ),
+    '#default_value' => $settings['environment'],
     '#required' => TRUE
   );
 
@@ -225,7 +237,7 @@ function commerce_datatrans_redirect_form($form, &$form_state, $order, $payment_
   $total = field_get_items('commerce_order', $order, 'commerce_order_total');
 
   // Datatrans get default gateway.
-  $form['#action'] = $payment_method['settings']['up_start_url'];
+  $form['#action'] = _commerce_datatrans_get_url($payment_method, 'START');
 
   // MerchantId, mandatory.
   $form['merchantId'] = array(
@@ -509,7 +521,7 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
         '#attached'   => array(
           'js' => array(
             array(
-              'data' => 'https://pilot.datatrans.biz/upp/payment/js/datatrans-1.0.0.js',
+              'data' => _commerce_datatrans_get_url($payment_method, 'SCRIPT'),
               'type' => 'external',
             ),
             drupal_get_path('module', 'commerce_datatrans') . '/commerce_datatrans.js',
@@ -738,12 +750,8 @@ function commerce_datatrans_refund_request($transaction, $amount = NULL) {
   $writer->endDocument();
   $xml = $writer->flush();
 
-  if (strpos($payment_method['settings']['up_start_url'], 'pilot') !== FALSE) {
-    $url = 'https://pilot.datatrans.biz/upp/jsp/XML_processor.jsp';
-  }
-  else {
-    $url = 'https://payment.datatrans.biz/upp/jsp/XML_processor.jsp';
-  }
+  $url = _commerce_datatrans_get_url($payment_method, 'SETTLEMENT');
+
   $options = [
     'headers' => [
       'Content-Type' => 'text/xml;charset=UTF-8',
@@ -753,4 +761,28 @@ function commerce_datatrans_refund_request($transaction, $amount = NULL) {
     'timeout' => 30,
   ];
   return drupal_http_request($url, $options);
+}
+
+/**
+ * Returns the datatrans url for various actions.
+ *
+ * @param array $payment_method
+ *   The payment method array. The only thing used is the test/prod switch
+ *    $payment_method['settings']['environment'].
+ * @param string $type
+ *   The url type. One of 'START', 'SCRIPT' or 'SETTLEMENT'. Case matters.
+ *
+ * @return The datatrans url to use or FALSE if $type is invalid.
+ */
+function _commerce_datatrans_get_url($payment_method, $type = 'START') {
+  if (!empty($payment_method['settings']['environment']) && $payment_method['settings']['environment'] == 'test') {
+    $env = 'TEST';
+  }
+  else {
+    $env = 'PROD';
+  }
+  if (defined("COMMERCE_DATATRANS_{$type}_URL_{$env}")) {
+    return constant("COMMERCE_DATATRANS_{$type}_URL_{$env}");
+  }
+  return FALSE;
 }

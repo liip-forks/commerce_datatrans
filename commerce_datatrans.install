@@ -24,3 +24,32 @@ function commerce_datatrans_requirements($phase) {
 
   return $requirements;
 }
+
+/**
+ * Update all Datatrans payment method rules to use the new "Environment"
+ * setting.
+ */
+function commerce_datatrans_update_7001() {
+  // Get all payment methods.
+  $conditions = array('event' => 'commerce_payment_methods', 'plugin' => 'reaction rule', 'active' => TRUE);
+  $payment_rules = entity_load('rules_config', FALSE, $conditions);
+  foreach ($payment_rules as $payment_rule) {
+    foreach (rules_config_load($payment_rule->name)->actions() as $action) {
+      // This is a datatrans payment method.
+      if (isset($action->settings) && isset($action->settings['payment_method']) && isset($action->settings['payment_method']['method_id']) && $action->settings['payment_method']['method_id'] == 'commerce_datatrans') {
+        if (isset($action->settings['payment_method']['settings']['up_start_url'])) {
+          // The payment method was in 'Test' mode.
+          if (strpos($action->settings['payment_method']['settings']['up_start_url'], 'pilot') !== FALSE) {
+            $action->settings['payment_method']['settings']['environment'] = 'test';
+          }
+          // The payment method was in 'Production' mode.
+          else {
+            $action->settings['payment_method']['settings']['environment'] = 'prod';
+          }
+          unset($action->settings['payment_method']['settings']['up_start_url']);
+          $payment_rule->save();
+        }
+      }
+    }
+  }
+}
