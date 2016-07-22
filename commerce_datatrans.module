@@ -43,7 +43,7 @@ function commerce_datatrans_commerce_payment_method_info() {
     'title' => t('Datatrans'),
     'description' => t('Redirect users to submit payments through Datatrans.'),
     'active' => TRUE,
-    'terminal' => FALSE,
+    'terminal' => TRUE,
     'offsite' => TRUE,
     'offsite_autoredirect' => TRUE,
   );
@@ -406,7 +406,7 @@ function _commerce_datatrans_get_transaction($order, $create = TRUE) {
 
 function _commerce_datatrans_transaction_save($payment_method, $order, $data, $status) {
 
-  $transaction = _commerce_datatrans_get_transaction($order);
+  $transaction = commerce_payment_transaction_new('commerce_datatrans', $order->order_id);
   $transaction->instance_id = isset($payment_method['instance_id']) ? $payment_method['instance_id'] : '';
   $transaction->amount = $data['amount'];
   $transaction->currency_code = $data['currency'];
@@ -428,7 +428,6 @@ function _commerce_datatrans_transaction_save($payment_method, $order, $data, $s
  */
 function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
   global $language;
-
   // Set default value to prevent errors.
   if (!array_key_exists('payment_mode', $payment_method['settings'])) {
     $payment_method['settings']['payment_mode'] = 'redirect';
@@ -448,27 +447,16 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
         $order->data['payment_redirect_key'] = drupal_hash_base64(time() . uniqid());
         commerce_order_save($order);
       }
-
-      // @todo Check this with commerce developers.
-      // Normally, if this payment method is not the first in the list,
-      // $pane_values['payment_method'] will contain the payment method instance ID.
-      // This is an ugly way to get to the instance ID of the first payment method
-      // in the list, but in that case $pane_values is empty.
       if (!isset($pane_values['payment_method'])) {
-        // Invoke the payment methods event that will populate the order with
-        // an array of method IDs for available payment methods.
-        $order->payment_methods = array();
-        rules_invoke_all('commerce_payment_methods', $order);
-
-        // Sort the payment methods array by the enabling Rules' weight values.
-        uasort($order->payment_methods, 'drupal_sort_weight');
-
-        // And get first key from $order->payment_methods.
-        $pane_values['payment_method'] = key($order->payment_methods);
+        // Terminal payment.
+        if (!empty($payment_method['instance_id'])) {
+          $pane_values['payment_method'] = $payment_method['instance_id'];
+        }
+        // Checkout payment.
+        else {
+          $pane_values['payment_method'] = key($order->payment_methods);
+        }
       }
-
-      // Get order total.
-      $total = field_get_items('commerce_order', $order, 'commerce_order_total');
 
       // Get sign string.
       $sign = FALSE;
@@ -477,7 +465,7 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           $sign = $payment_method['settings']['security']['merchant_control_constant'];
           break;
         case 2:
-          $sign = hash_hmac('md5', $payment_method['settings']['merchant_id'] . $total[0]['amount'] . $total[0]['currency_code'] . $order->order_id, pack("H*", $payment_method['settings']['security']['hmac_key']));
+          $sign = hash_hmac('md5', $payment_method['settings']['merchant_id'] . $balance['amount'] . $balance['currency_code'] . $order->order_id, pack("H*", $payment_method['settings']['security']['hmac_key']));
           break;
       }
       // Get enabled payment methods.
@@ -500,14 +488,14 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
       $form['pay'] = array(
         '#type'       => 'submit',
         '#value'      => t('Pay with Datatrans'),
-        '#prefix'     => '<div class="checkout-buttons">',
+        '#prefix'     => '<div class="checkout-buttons" id="datatrans-pay-button">',
         '#suffix'     => '</div>',
         '#attributes' => array(
           'id'               => 'paymentButton',
           'class'            => array('checkout-continue'),
           'data-merchant-id' => $payment_method['settings']['merchant_id'],
-          'data-amount'      => $total[0]['amount'],
-          'data-currency'    => $total[0]['currency_code'],
+          'data-amount'      => $balance['amount'],
+          'data-currency'    => $balance['currency_code'],
           'data-reqtype'    => $payment_method['settings']['req_type'],
           'data-refno'       => $order->order_id,
           'data-language'    => $language->language,
@@ -785,4 +773,63 @@ function _commerce_datatrans_get_url($payment_method, $type = 'START') {
     return constant("COMMERCE_DATATRANS_{$type}_URL_{$env}");
   }
   return FALSE;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * This is the form on the /admin/commerce/orders/%order/payment page to
+ * perform terminal transactions.
+ */
+function commerce_datatrans_form_commerce_payment_order_transaction_add_form_alter(&$form, &$form_state) {
+  if (!empty($form_state['values']) && $form_state['payment_method']['method_id'] == 'commerce_datatrans') {
+    // We need to refresh the "Pay with Datatrans" button attributes every
+    // time the amount changes.
+    // @todo In Chrome the textfield loses focus after each keyup.
+    $form['payment_terminal']['amount']['#ajax'] = [
+      'wrapper' => 'datatrans-pay-button',
+      'callback' => 'commerce_datatrans_form_commerce_payment_order_transaction_amount_ajax',
+      'event' => 'keyup',
+    ];
+    // Do not allow changing the currency.
+    $form['payment_terminal']['currency_code']['#disabled'] = TRUE;
+    // We have the "Pay with Datatrans" button instead of the Save button.
+    unset($form['actions']);
+  }
+
+  // Terminal payment only works in lightbox mode at the moment.
+  foreach ($form['payment_method']['#options'] as $key => $label) {
+    $payment_method = commerce_payment_method_instance_load($key);
+    if (($payment_method['method_id'] == 'commerce_datatrans') && isset($payment_method['settings']['payment_mode']) && ($payment_method['settings']['payment_mode'] != 'lightbox') ) {
+      unset($form['payment_method']['#options'][$key]);
+    }
+  }
+}
+
+/**
+ * AJAX callback.
+ *
+ * Update the "Pay with Datatrans" button attributes when amount changes.
+ *
+ * This should be done in commerce_datatrans_submit_form() but we have no
+ * access to $form_state there.
+ */
+function commerce_datatrans_form_commerce_payment_order_transaction_amount_ajax($form, $form_state) {
+  // Set the amount attribute.
+  $form['payment_terminal']['payment_details']['pay']['#attributes']['data-amount']  = $form_state['values']['amount'];
+  // Since the amount has changed, we need to recalculate the digital
+  // signature.
+  $payment_method = $form_state['payment_method'];
+  // Get sign string.
+  $sign = FALSE;
+  switch ($payment_method['settings']['security']['security_level']) {
+    case 1:
+      $sign = $payment_method['settings']['security']['merchant_control_constant'];
+      break;
+    case 2:
+      $sign = hash_hmac('md5', $payment_method['settings']['merchant_id'] . $form_state['values']['amount'] . $form_state['values']['currency_code'] . $form_state['build_info']['args'][0]->order_id, pack("H*", $payment_method['settings']['security']['hmac_key']));
+      break;
+  }
+  $form['payment_terminal']['payment_details']['pay']['#attributes']['data-sign'] = $sign;
+  return $form['payment_terminal']['payment_details']['pay'];
 }

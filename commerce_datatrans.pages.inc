@@ -29,12 +29,22 @@ function commerce_datatrans_payment_processing($order_id, $payment_method_id, $p
         $payment_method['instance_id'] = $payment_method_id;
 
         if (commerce_datatrans_redirect_form_validate($order, $payment_method)) {
+          // Payments can be made in a checkout process or in a terminal (i.e.
+          // admin/commerce/orders/%commerce_order/payment). These two cases
+          // redirect to different places.
+          $state = commerce_order_status_load($order->status)['state'];
           // Transaction save.
           _commerce_datatrans_transaction_save($payment_method, $order, $datatrans, COMMERCE_PAYMENT_STATUS_SUCCESS);
 
-          // Send the customer onto the next checkout page.
-          commerce_datarans_redirect_pane_next_page($order, t('Customer successfully submitted payment at the payment gateway.'));
-          drupal_goto(commerce_checkout_order_uri($order));
+          if ($state == 'checkout') {
+            // Send the customer onto the next checkout page.
+            commerce_datarans_redirect_pane_next_page($order, t('Customer successfully submitted payment at the payment gateway.'));
+            drupal_goto(commerce_checkout_order_uri($order));
+          }
+          else {
+            // Stay on the order's payments page.
+            drupal_goto('admin/commerce/orders/' . $order->order_id . '/payment');
+          }
         }
         break;
       default:
