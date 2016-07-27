@@ -7,9 +7,11 @@
       // multiple triggers.
       $('#paymentButton', context).once('datatrans', function() {
         $(this).click(function () {
-          $('form').submit(function (e) {
+          var disableSubmit = function(e) {
             e.preventDefault();
-          });
+          };
+
+          $('form').bind('submit', disableSubmit);
 
           Datatrans.startPayment({
             // Use the class selector here and not the id selector because of
@@ -23,6 +25,10 @@
               // @see commerce_checkout.js
               $(this.form + '[disabled]').remove();
               $(this.form).show();
+
+              // Also re-enable the form again, in case the user wants to proceed
+              // with another payment option.
+              $('form').unbind('submit', disableSubmit);
             }
           });
         });
