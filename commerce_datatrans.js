@@ -35,13 +35,15 @@
 
         // Hides continue button if Datatrans payment method selected.
         if ($('#paymentButton').length) {
-          $('#edit-buttons').hide();
+          $('#edit-buttons #edit-continue').hide();
+          $('#edit-buttons .button-operator').hide();
         }
       });
 
       // Shows continue button for any other payment method.
       if (!$('#paymentButton').length) {
-        $('#edit-buttons').show();
+        $('#edit-buttons #edit-continue').show();
+        $('#edit-buttons .button-operator').show();
       }
     }
   };
