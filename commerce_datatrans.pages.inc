@@ -13,6 +13,23 @@
  * @param $payment_key        URL key used to validate request.
  */
 function commerce_datatrans_payment_processing($order_id, $payment_method_id, $payment_key, $error_redirect_url = '') {
+  // We are right after (a successful or failed) credit card payment. However,
+  // since datatrans payment is not a proper checkout form submission, the
+  // order is still in checkout_review status and not in checkout_payment.
+  // Since checkout_review is a cart status, hook_commerce_cart_order_refresh()
+  // gets invoked when loading the order below. This is definitely not the
+  // intended behavior and breaks giftcard coupons by trying to apply them
+  // again. So let's trick commerce into thinking that we already have invoked
+  // hook_commerce_cart_order_refresh().
+  // @see commerce_cart_commerce_order_load()
+  // @see commerce_gc_commerce_coupon_final_checkout_validate()
+  $refreshed = &drupal_static('commerce_cart_commerce_order_load', array());
+  // If for whatever reason the refreshed value is explicitly set to FALSE,
+  // let's keep it that way.
+  if (!isset($refreshed[$order_id])) {
+    $refreshed[$order_id] = TRUE;
+  }
+
   $order     = commerce_order_load($order_id);
   $datatrans = $_POST;
 
