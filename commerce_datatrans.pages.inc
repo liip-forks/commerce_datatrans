@@ -59,8 +59,11 @@ function commerce_datatrans_payment_processing($order_id, $payment_method_id, $p
             drupal_goto(commerce_checkout_order_uri($order));
           }
           else {
+            // Preserve url queries, if any.
+            $query = drupal_get_query_parameters();
+            $url_options = array('query' => $query);
             // Stay on the order's payments page.
-            drupal_goto('admin/commerce/orders/' . $order->order_id . '/payment');
+            drupal_goto('admin/commerce/orders/' . $order->order_id . '/payment', $url_options);
           }
         }
         break;

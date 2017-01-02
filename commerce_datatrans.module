@@ -485,6 +485,11 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
       else {
         $error_redirect_url = urlencode($_SERVER['HTTP_REFERER']);
       }
+
+      // Add support for url queries on redirect.
+      $query = drupal_get_query_parameters();
+      $url_options = array('absolute' => TRUE, 'query' => $query);
+
       $form['pay'] = array(
         '#type'       => 'submit',
         '#value'      => t('Pay with Datatrans'),
@@ -500,9 +505,9 @@ function commerce_datatrans_submit_form($payment_method, $pane_values, $checkout
           'data-refno'       => $order->order_id,
           'data-language'    => $language->language,
           'data-paymentmethod' => $paymentmethod,
-          'data-success-url' => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
-          'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
-          'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, array('absolute' => TRUE)),
+          'data-success-url' => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, $url_options),
+          'data-error-url'   => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, $url_options),
+          'data-cancel-url'  => url('commerce_datatrans/processing/' . $order->order_id . '/' . $pane_values['payment_method'] . '/' . $order->data['payment_redirect_key'] . '/' . $error_redirect_url, $url_options),
           'data-sign'        => $sign,
           'data-theme-configuration' => '{' . str_replace('"', '\'', $payment_method['settings']['theme_configuration']) . '}',
         ),
