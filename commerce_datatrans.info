@@ -1,6 +1,0 @@
-name = Commerce Datatrans
-description = Datatrans payment gateway for Drupal Commerce
-package = Commerce (contrib)
-dependencies[] = commerce
-dependencies[] = commerce_payment
-core = 7.x
