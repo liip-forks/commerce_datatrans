@@ -1,0 +1,16 @@
+commerce_datatrans.dummy_redirect_post:
+  path: 'commerce_datatrans/dummy_redirect_post'
+  defaults:
+    _controller: '\Drupal\commerce_datatrans\Controller\DummyRedirectController::post'
+  options:
+    no_cache: TRUE
+  requirements:
+    _access: 'TRUE'
+commerce_datatrans.dummy_redirect_302:
+  path: 'commerce_datatrans/dummy_redirect_302'
+  defaults:
+    _controller: '\Drupal\commerce_datatrans\Controller\DummyRedirectController::on302'
+  options:
+    no_cache: TRUE
+  requirements:
+    _access: 'TRUE'
