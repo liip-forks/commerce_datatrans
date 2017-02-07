@@ -1,12 +1,15 @@
 <?php
 
-namespace Drupal\commerce_datatrans\PluginForm\OffsiteRedirect;
+namespace Drupal\commerce_datatrans\PluginForm;
 
-use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm as BasePaymentOffsiteForm;
+use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 
-class PaymentOffsiteForm extends BasePaymentOffsiteForm {
+/**
+ * Provides a checkout form for the Datatrans gateway.
+ */
+class DatatransForm extends PaymentOffsiteForm {
 
   /**
    * {@inheritdoc}
