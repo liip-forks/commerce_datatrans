@@ -2,9 +2,11 @@
 
 namespace Drupal\commerce_datatrans\PluginForm;
 
+use Drupal\commerce_datatrans\DatatransHelper;
 use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use Drupal\currency\Entity\Currency;
 
 /**
  * Provides a checkout form for the Datatrans gateway.
@@ -19,29 +21,30 @@ class DatatransForm extends PaymentOffsiteForm {
 
     /** @var \Drupal\commerce_payment\Entity\PaymentInterface $payment */
     $payment = $this->entity;
-    /** @var \Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayInterface $payment_gateway_plugin */
-    $payment_gateway_plugin = $payment->getPaymentGateway()->getPlugin();
-    $redirect_method = $payment_gateway_plugin->getConfiguration()['redirect_method'];
-    if ($redirect_method == 'post') {
-      $redirect_url = Url::fromRoute('commerce_datatrans.dummy_redirect_post')->toString();
+
+    // We need the payment_id.
+    if ($payment->isNew()) {
+      $payment->save();
     }
-    else {
-      $order = $payment->getOrder();
-      // Gateways that use the GET redirect method usually perform an API call
-      // that prepares the remote payment and provides the actual url to
-      // redirect to. Any params received from that API call that need to be
-      // persisted until later payment creation can be saved in $order->data.
-      // Example: $order->setData('my_gateway', ['test' => '123']), followed
-      // by an $order->save().
-      $redirect_url = Url::fromRoute('commerce_datatrans.dummy_redirect_302', [], ['absolute' => TRUE])->toString();
-    }
+
+    /** @var \Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayInterface $gateway */
+    $gateway = $payment->getPaymentGateway()->getPlugin();
+    $gateway_config = $gateway->getConfiguration();
+
     $data = [
-      'return' => $form['#return_url'],
-      'cancel' => $form['#cancel_url'],
-      'total' => $payment->getAmount()->getNumber(),
+      'merchantId' => $gateway_config['merchant_id'],
+      'amount' => $payment->getAmount()->getNumber(),
+      'currency' => $payment->getAmount()->getCurrencyCode(),
+      'refno' => $payment->id(),
+      'sign' => NULL,
+      'successUrl' => Url::fromRoute('commerce_datatrans.gateway_success', ['payment' => $payment->id()], ['absolute' => TRUE])->toString(),
+      'errorUrl' => Url::fromRoute('commerce_datatrans.gateway_error', ['payment' => $payment->id()], ['absolute' => TRUE])->toString(),
+      'cancelUrl' => Url::fromRoute('commerce_datatrans.gateway_cancel', ['payment' => $payment->id()], ['absolute' => TRUE])->toString(),
+      'security_level' => $gateway_config['security_level'],
+      'datatrans_key' => DatatransHelper::generateDatatransKey($payment),
     ];
 
-    return $this->buildRedirectForm($form, $form_state, $redirect_url, $data, $redirect_method);
+    return $this->buildRedirectForm($form, $form_state, $gateway_config['service_url'], $data, static::REDIRECT_POST);
   }
 
 }

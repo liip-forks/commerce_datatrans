@@ -2,9 +2,9 @@
 
 namespace Drupal\commerce_datatrans;
 
+use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Site\Settings;
-use Drupal\payment\Entity\PaymentInterface;
 
 /**
  * Helper methods for various Datatrans related tasks.
@@ -21,9 +21,14 @@ class DatatransHelper {
    *   The generated key.
    */
   public static function generateDatatransKey(PaymentInterface $payment) {
-    return Crypt::hashBase64($payment->id() . $payment->getPaymentStatus()
-        ->getPluginId() . Settings::getHashSalt() . \Drupal::service('private_key')
-        ->get());
+    $hash_parts = [
+      $payment->id(),
+      $payment->getPaymentGatewayId(),
+      Settings::getHashSalt(),
+      \Drupal::service('private_key')->get(),
+    ];
+
+    return Crypt::hashBase64(implode('', $hash_parts));
   }
 
   /**
