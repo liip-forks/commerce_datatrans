@@ -43,6 +43,11 @@ class DatatransForm extends PaymentOffsiteForm {
       'security_level' => $gateway_config['security_level'],
     ];
 
+    // Request type.
+    if (!empty($gateway_config['req_type']) && $gateway_config['req_type'] != 'ignore') {
+      $payment_data['reqtype'] = $gateway_config['req_type'];
+    }
+
     // Handle security levels.
     switch ($gateway_config['security_level']) {
       case 1:
