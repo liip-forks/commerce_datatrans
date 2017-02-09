@@ -125,7 +125,6 @@ class Datatrans extends OffsitePaymentGatewayBase {
       '#options' => [
         'NOA' => t('Authorization only'),
         'CAA' => t('Authorization with immediate settlement'),
-//        'conditional' => t('Authorization with conditional settlement'),
         'ignore' => t('According to the setting in the Web Admin Tool'),
       ],
       '#default_value' => $this->configuration['req_type'],

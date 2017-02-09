@@ -49,7 +49,7 @@ class DatatransForm extends PaymentOffsiteForm {
         $data['sign'] = $gateway_config['sign'];
         break;
 
-      case 1:
+      case 2:
         // Generates the sign.
         $data['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $amount, $currency_code, $order->id());
         break;
