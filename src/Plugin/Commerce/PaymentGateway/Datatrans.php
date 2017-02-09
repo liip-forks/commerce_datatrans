@@ -208,7 +208,6 @@ class Datatrans extends OffsitePaymentGatewayBase {
   public function onReturn(OrderInterface $order, Request $request) {
     // @todo Add examples of request validation.
     $post_data = $request->request->all();
-    $this->onNotify($request, FALSE);
 
     if (isset($post_data['status'])) {
       switch ($post_data['status']) {
@@ -227,7 +226,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
   /**
    * {@inheritdoc}
    */
-  public function onNotify(Request $request, $save = TRUE) {
+  public function onNotify(Request $request) {
     $post_data = $request->request->all();
     $gateway_config = $this->getConfiguration();
 
@@ -299,9 +298,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
           'remote_state' => $post_data['responseMessage'],
           'authorized' => REQUEST_TIME,
         ]);
-        if ($save) {
-          $payment->save();
-        }
+        $payment->save();
         break;
 
       case 'error':
