@@ -2,6 +2,7 @@
 
 namespace Drupal\commerce_datatrans\Plugin\Commerce\PaymentGateway;
 
+use Drupal\commerce_datatrans\DatatransHelper;
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
@@ -207,6 +208,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
   public function onReturn(OrderInterface $order, Request $request) {
     // @todo Add examples of request validation.
     $post_data = $request->request->all();
+    $this->onNotify($request, FALSE);
 
     if (isset($post_data['status'])) {
       switch ($post_data['status']) {
@@ -220,16 +222,21 @@ class Datatrans extends OffsitePaymentGatewayBase {
           throw new PaymentGatewayException();
       }
     }
-
   }
 
   /**
    * {@inheritdoc}
    */
-  public function onNotify(Request $request) {
+  public function onNotify(Request $request, $save = TRUE) {
     $post_data = $request->request->all();
+    $gateway_config = $this->getConfiguration();
 
-    if (!isset($post_data['refno'])) {
+    // We must have post data, order id and this order must exist.
+    if (empty($post_data)) {
+      return new Response('', 400);
+    }
+
+    if (empty($post_data['refno'])) {
       return new Response('', 400);
     }
 
@@ -239,12 +246,51 @@ class Datatrans extends OffsitePaymentGatewayBase {
       return new Response('', 400);
     }
 
+    // Error and cancel.
+    if ($post_data['status'] == 'error') {
+      $this->logger->error('The payment gateway returned the error code %code (%code_text) with details %details for order %order_id', [
+        '%code' => $post_data['errorCode'],
+        '%code_text' => DatatransHelper::mapErrorCode($post_data['errorCode']),
+        '%details' => $post_data['errorDetail'],
+        '%order_id' => $order->id(),
+      ]);
+      return new Response('', 400);
+    }
+
+    if ($post_data['status'] == 'cancel') {
+      $this->logger->info('The user canceled the authorisation process for order %order_id', [
+        '%order_id' => $order->id(),
+      ]);
+      return new Response('', 400);
+    }
+
+    // Security levels.
+    if (empty($post_data['security_level']) || $post_data['security_level'] != $gateway_config['security_level']) {
+      return new Response('', 400);
+    }
+
+    // If security level 2 is configured then generate and use a sign.
+    if ($gateway_config['security_level'] == 2) {
+      $sign2 = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $post_data['amount'], $post_data['currency'], $post_data['uppTransactionId']);
+
+      // Check for correct sign.
+      if (empty($post_data['sign2']) || $sign2 != $post_data['sign2']) {
+        $this->logger->warning('Detected non matching signs while processing order %order_id (Error code %error_code: %details)', [
+          '%order_id' => $order->id(),
+          '%error_code' => $post_data['errorCode'],
+          '%details' => $post_data['errorDetail']
+        ]);
+        return new Response('', 400);
+      }
+    }
+
+    // Process the payment.
     switch ($post_data['status']) {
       case 'success':
         $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
         $payment = $payment_storage->create([
           'state' => 'authorization',
-          // @todo Should we rather set price we get from  datatrans?
+          // @todo Should we rather set price we get from datatrans?
           'amount' => $order->getTotalPrice(),
           'payment_gateway' => $this->entityId,
           'order_id' => $order->id(),
@@ -253,7 +299,9 @@ class Datatrans extends OffsitePaymentGatewayBase {
           'remote_state' => $post_data['responseMessage'],
           'authorized' => REQUEST_TIME,
         ]);
-        $payment->save();
+        if ($save) {
+          $payment->save();
+        }
         break;
 
       case 'error':

@@ -28,9 +28,12 @@ class DatatransForm extends PaymentOffsiteForm {
     /** @var \Drupal\commerce_price\Entity\CurrencyInterface $currency */
     $currency = Currency::load($currency_code);
 
+    // Calculate the amount in the form Datatrans expects it.
+    $amount = intval($order->getTotalPrice()->getNumber() * pow(10, $currency->getFractionDigits()));
+
     $data = [
       'merchantId' => $gateway_config['merchant_id'],
-      'amount' => intval($order->getTotalPrice()->getNumber() * pow(10, $currency->getFractionDigits())),
+      'amount' => $amount,
       'refno' => $order->id(),
       'sign' => NULL,
       'currency' => $currency_code,
@@ -40,9 +43,16 @@ class DatatransForm extends PaymentOffsiteForm {
       'security_level' => $gateway_config['security_level'],
     ];
 
+    // Generate the sign if security 2 was selected.
     if ($gateway_config['security_level'] == 2) {
       // Generates the sign.
-      $payment['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $order->getTotalPrice()->getNumber(), $currency_code, $order->id());
+      $data['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $amount, $currency_code, $order->id());
+    }
+
+    // If use alias option was enabled in method confiuration apply this for
+    // this payment method plugin.
+    if ($gateway_config['use_alias']) {
+      $data['useAlias'] = 'true';
     }
 
     return $this->buildRedirectForm($form, $form_state, $gateway_config['service_url'], $data, static::REDIRECT_POST);

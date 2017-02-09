@@ -42,15 +42,15 @@ class DatatransHelper {
    *   Transaction amount in cents or smallest available unit of the currency.
    * @param string $currency
    *   Transaction currency – ISO Character Code (CHF, USD, EUR etc.).
-   * @param string $order_id
-   *   Our reference number.
+   * @param string $reference_number
+   *   Order id when sending data upstream, uppTransactionId when receiving daa.
    *
    * @return string
    *   The computed hash.
    */
-  public static function generateSign($hmac_key, $merchant_id, $amount, $currency, $order_id) {
-    $hmac_data = $merchant_id . $amount . $currency . $order_id;
-    return hash_hmac('md5', $hmac_data, pack('H*', $hmac_key));
+  public static function generateSign($hmac_key, $merchant_id, $amount, $currency, $reference_number) {
+    $hmac_data = $merchant_id . $amount . $currency . $reference_number;
+    return hash_hmac('sha256', $hmac_data, pack('H*', $hmac_key));
   }
 
   /**
