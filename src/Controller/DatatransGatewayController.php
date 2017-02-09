@@ -2,19 +2,20 @@
 
 namespace Drupal\commerce_datatrans\Controller;
 
-use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
-use Drupal\Core\Routing\TrustedRedirectResponse;
+use Drupal\commerce_price\Entity\Currency;
+use Drupal\commerce_price\Price;
+use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
-use Drupal\payment\Entity\PaymentInterface;
+use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\payment_datatrans\DatatransHelper;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * This is a dummy controller for mocking an off-site gateway.
  */
-class DatatransGatewayController implements ContainerInjectionInterface {
+class DatatransGatewayController extends ControllerBase {
 
   /**
    * The current request.
@@ -24,13 +25,21 @@ class DatatransGatewayController implements ContainerInjectionInterface {
   protected $currentRequest;
 
   /**
+   * Payment storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface
+   */
+  protected $paymentStorage;
+
+  /**
    * Constructs a new DummyRedirectController object.
    *
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack.
    */
-  public function __construct(RequestStack $request_stack) {
+  public function __construct(RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager) {
     $this->currentRequest = $request_stack->getCurrentRequest();
+    $this->paymentStorage = $entity_type_manager->getStorage('commerce_payment');
   }
 
   /**
@@ -38,34 +47,20 @@ class DatatransGatewayController implements ContainerInjectionInterface {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('request_stack')
+      $container->get('request_stack'),
+      $container->get('entity_type.manager')
     );
-  }
-
-  /**
-   * Page callback for processing post data sent from Datatrans.
-   */
-  public function post() {
-//    $cancel = $this->currentRequest->request->get('cancel');
-//    $return = $this->currentRequest->request->get('return');
-//    $total = $this->currentRequest->request->get('total');
-
-    return [
-      '#markup' => 'ok'
-    ];
   }
 
   /**
    * Page callback for processing successful Datatrans response.
    *
-   * @param Request $request
-   *   Request
-   * @param PaymentInterface $payment
+   * @param \Drupal\commerce_payment\Entity\PaymentInterface $commerce_payment
    *   The Payment entity type.
    *
    * @return \Symfony\Component\HttpFoundation\Response
    */
-  public function success(Request $request, PaymentInterface $payment) {
+  public function success(PaymentInterface $commerce_payment) {
     try {
       // This needs to be checked to match the payment method settings
       // ND being valid with its keys and data.
@@ -165,39 +160,6 @@ class DatatransGatewayController implements ContainerInjectionInterface {
       drupal_set_message(t('Payment processing failed.'), 'error');
       return $this->savePayment($payment);
     }
-  }
-
-  /**
-   * Page callback for processing error Datatrans response.
-   *
-   * @param PaymentInterface $payment
-   *  The Payment entity type.
-   *
-   * @return \Symfony\Component\HttpFoundation\Response
-   *
-   * @throws \Exception
-   */
-  public function error(PaymentInterface $payment) {
-
-    $message = 'Datatrans communication failure. Invalid data received from Datatrans.';
-    \Drupal::logger('datatrans')->error('Processing failed with exception @e.', array('@e' => $message));
-    drupal_set_message(t('Payment processing failed.'), 'error');
-    return $this->savePayment($payment);
-  }
-
-  /**
-   * Page callback for processing cancellation Datatrans response.
-   *
-   * @param PaymentInterface $payment
-   *  The Payment entity type.
-   *
-   * @return \Symfony\Component\HttpFoundation\Response
-   *
-   * @throws \Exception
-   */
-  public function cancel(PaymentInterface $payment) {
-    drupal_set_message(t('Payment cancelled.'), 'error');
-    return $this->savePayment($payment, 'payment_cancelled');
   }
 
   /**

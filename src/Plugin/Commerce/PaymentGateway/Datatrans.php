@@ -3,10 +3,18 @@
 namespace Drupal\commerce_datatrans\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\PaymentMethodTypeManager;
+use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\commerce_price\Entity\Currency;
+use Drupal\commerce_price\Price;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Url;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Provides the Datatrans payment gateway.
@@ -28,6 +36,51 @@ use Symfony\Component\HttpFoundation\Request;
  * )
  */
 class Datatrans extends OffsitePaymentGatewayBase {
+
+  /**
+   * Logger.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelInterface
+   */
+  protected $logger;
+
+  /**
+   * Constructs a Datatrans object.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $plugin_id
+   *   The plugin_id for the plugin instance.
+   * @param mixed $plugin_definition
+   *   The plugin implementation definition.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\commerce_payment\PaymentTypeManager $payment_type_manager
+   *   The payment type manager.
+   * @param \Drupal\commerce_payment\PaymentMethodTypeManager $payment_method_type_manager
+   *   The payment method type manager.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger factory service.
+   */
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, LoggerChannelFactoryInterface $logger_factory) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
+    $this->logger = $logger_factory->get('commerce_datatrans');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('entity_type.manager'),
+      $container->get('plugin.manager.commerce_payment_type'),
+      $container->get('plugin.manager.commerce_payment_method_type'),
+      $container->get('logger.factory')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -152,19 +205,98 @@ class Datatrans extends OffsitePaymentGatewayBase {
    */
   public function onReturn(OrderInterface $order, Request $request) {
     // @todo Add examples of request validation.
-    $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
-    $payment = $payment_storage->create([
-      'state' => 'authorization',
-      'amount' => $order->getTotalPrice(),
-      'payment_gateway' => $this->entityId,
-      'order_id' => $order->id(),
-      'test' => $this->getMode() == 'test',
-      'remote_id' => $request->query->get('txn_id'),
-      'remote_state' => $request->query->get('payment_status'),
-      'authorized' => REQUEST_TIME,
-    ]);
-    $payment->save();
+    $post_data = $request->request->all();
+
+    if ($payment = \Drupal::entityTypeManager()->getStorage('commerce_payment')->load($post_data['refno'])) {
+      $currency_code = $payment->getAmount()->getCurrencyCode();
+      /** @var \Drupal\commerce_price\Entity\CurrencyInterface $currency */
+      $currency = Currency::load($currency_code);
+
+      $a = $post_data['amount'] / pow(10, $currency->getFractionDigits());
+      $price = new Price((string) $a, $currency_code);
+
+      // @todo Missing 'state' here.
+      $payment->setAmount($price);
+      $payment->setRemoteId($post_data['acqAuthorizationCode']);
+      $payment->setRemoteState($post_data['status']);
+      $payment->setAuthorizedTime(REQUEST_TIME);
+//      $payment->save();
+
+    }
+
+    // @todo Missing 'state' here.
+
     drupal_set_message('Payment was processed');
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function onCancel(OrderInterface $order, Request $request) {
+    drupal_set_message($this->t('You have canceled checkout at @gateway but may resume the checkout process here when you are ready.', [
+      '@gateway' => $this->getDisplayLabel(),
+    ]));
+  }
+
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getNotifyUrl() {
+    return Url::fromRoute('commerce_payment.notify', [
+      'commerce_payment_gateway' => $this->entityId,
+    ], ['absolute' => TRUE]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function onNotify(Request $request) {
+    $post_data = $request->request->all();
+
+    if (!isset($post_data['refno'])) {
+      return new Response('', 400);
+    }
+
+    /** @var \Drupal\commerce_payment\entity\PaymentInterface $payment */
+    $payment = $this->entityTypeManager->getStorage('commerce_payment')->load($post_data['refno']);
+    if (!$payment) {
+      return new Response('', 400);
+    }
+
+    switch ($post_data['status']) {
+      case 'success':
+        $currency_code = $payment->getAmount()->getCurrencyCode();
+
+        /** @var \Drupal\commerce_price\Entity\CurrencyInterface $currency */
+        $currency = Currency::load($currency_code);
+
+        $datatrans_amount = $post_data['amount'] / pow(10, $currency->getFractionDigits());
+        $price = new Price((string) $datatrans_amount, $currency_code);
+
+        // @todo Missing 'state' here.
+        $payment->setAmount($price);
+        // Documentation states we should use acqAuthorizationCode but that
+        // number is not visible in their ui.
+        $payment->setRemoteId($post_data['authorizationCode']);
+        $payment->setRemoteState($post_data['status']);
+        $payment->setAuthorizedTime(REQUEST_TIME);
+        $payment->save();
+        break;
+
+      case 'error':
+        $this->logger->error('The payment gateway returned the error code %code (%details) for payment %payment_id', [
+          '%code' => $post_data['errorCode'],
+          '%details' => $post_data['errorDetail'],
+          '%payment_id' => $payment->id(),
+        ]);
+        break;
+
+      case 'cancel':
+        $this->logger->info('The user canceled the authorisation process for payment %payment_id', [
+          '%payment_id' => $payment->id(),
+        ]);
+        break;
+    }
+  }
 }
