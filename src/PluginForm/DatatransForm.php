@@ -43,13 +43,19 @@ class DatatransForm extends PaymentOffsiteForm {
       'security_level' => $gateway_config['security_level'],
     ];
 
-    // Generate the sign if security 2 was selected.
-    if ($gateway_config['security_level'] == 2) {
-      // Generates the sign.
-      $data['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $amount, $currency_code, $order->id());
+    // Handle security levels.
+    switch ($gateway_config['security_level']) {
+      case 1:
+        $data['sign'] = $gateway_config['sign'];
+        break;
+
+      case 1:
+        // Generates the sign.
+        $data['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $amount, $currency_code, $order->id());
+        break;
     }
 
-    // If use alias option was enabled in method confiuration apply this for
+    // If use alias option was enabled in method configuration apply this for
     // this payment method plugin.
     if ($gateway_config['use_alias']) {
       $data['useAlias'] = 'true';
