@@ -20,14 +20,9 @@ class DatatransForm extends PaymentOffsiteForm {
 
     /** @var \Drupal\commerce_payment\Entity\PaymentInterface $payment */
     $payment = $this->entity;
-
-    if ($payment->isNew()) {
-      $payment->save();
-      $this->setEntity($payment);
-    }
-
     $gateway = $payment->getPaymentGateway()->getPlugin();
     $gateway_config = $gateway->getConfiguration();
+    $order = $payment->getOrder();
 
     $currency_code = $payment->getAmount()->getCurrencyCode();
     /** @var \Drupal\commerce_price\Entity\CurrencyInterface $currency */
@@ -35,8 +30,8 @@ class DatatransForm extends PaymentOffsiteForm {
 
     $data = [
       'merchantId' => $gateway_config['merchant_id'],
-      'amount' => intval($payment->getAmount()->getNumber() * pow(10, $currency->getFractionDigits())),
-      'refno' => $payment->id(),
+      'amount' => intval($order->getTotalPrice()->getNumber() * pow(10, $currency->getFractionDigits())),
+      'refno' => $order->id(),
       'sign' => NULL,
       'currency' => $currency_code,
       'successUrl' => $form['#return_url'],
@@ -47,7 +42,7 @@ class DatatransForm extends PaymentOffsiteForm {
 
     if ($gateway_config['security_level'] == 2) {
       // Generates the sign.
-      $payment['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $payment->getAmount()->getNumber(), $currency_code, $payment->id());
+      $payment['sign'] = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $order->getTotalPrice()->getNumber(), $currency_code, $order->id());
     }
 
     return $this->buildRedirectForm($form, $form_state, $gateway_config['service_url'], $data, static::REDIRECT_POST);
