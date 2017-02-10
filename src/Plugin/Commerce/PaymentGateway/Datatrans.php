@@ -8,8 +8,6 @@ use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
 use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
-use Drupal\commerce_price\Entity\Currency;
-use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -152,7 +150,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
       '#options' => [
         '0' => t('Level 0. No additional security element will be send with payment messages. (not recommended)'),
         '1' => t('Level 1. An additional Merchant-Identification will be send with payment messages'),
-        '2' => t('Level 2. Important parameters will be digitally signed (HMAC-MD5) and sent with payment messages'),
+        '2' => t('Level 2. Important parameters will be digitally signed (HMAC-SHA256) and sent with payment messages'),
       ],
       '#default_value' => $this->configuration['security_level'],
     ];
