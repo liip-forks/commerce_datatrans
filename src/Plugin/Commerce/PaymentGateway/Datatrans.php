@@ -3,11 +3,14 @@
 namespace Drupal\commerce_datatrans\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_datatrans\DatatransHelper;
+use Drupal\commerce_order\Entity\Order;
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
 use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -206,18 +209,13 @@ class Datatrans extends OffsitePaymentGatewayBase {
     // @todo Add examples of request validation.
     $post_data = $request->request->all();
 
-    if (isset($post_data['status'])) {
-      switch ($post_data['status']) {
-        case 'success':
-          drupal_set_message($this->t('Payment was processed successfully'));
-          break;
-
-        default:
-          // @todo Should we give more info.
-          drupal_set_message($this->t('There was a problem while processing your payment.'), 'warning');
-          throw new PaymentGatewayException();
-      }
+    if (!$this->validateResponseData($post_data, $order)) {
+      drupal_set_message($this->t('There was a problem while processing your payment.'), 'warning');
+      throw new PaymentGatewayException();
     }
+
+    $this->processPayment($post_data, $order);
+    drupal_set_message($this->t('Payment was processed successfully'));
   }
 
   /**
@@ -225,21 +223,38 @@ class Datatrans extends OffsitePaymentGatewayBase {
    */
   public function onNotify(Request $request) {
     $post_data = $request->request->all();
-    $gateway_config = $this->getConfiguration();
-
-    // We must have post data, order id and this order must exist.
-    if (empty($post_data)) {
-      return new Response('', 400);
-    }
-
-    if (empty($post_data['refno'])) {
-      return new Response('', 400);
-    }
 
     /** @var \Drupal\commerce_order\entity\OrderInterface $order */
     $order = $this->entityTypeManager->getStorage('commerce_order')->load($post_data['refno']);
     if (!$order) {
       return new Response('', 400);
+    }
+
+    if ($this->validateResponseData($post_data, $order)) {
+      $this->processPayment($post_data, $order);
+    }
+    else {
+      return new Response('', 400);
+    }
+  }
+
+  /**
+   * Validate the data received from Datatrans.
+   *
+   * @param array $post_data
+   *   Data received from Datatrans.
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   Order entity.
+   *
+   * @return bool
+   *   The validation result.
+   */
+  protected function validateResponseData(array $post_data, OrderInterface $order) {
+    $gateway_config = $this->getConfiguration();
+
+    // We must have post data, order id and this order must exist.
+    if (empty($post_data) || empty($post_data['refno'])) {
+      return FALSE;
     }
 
     // Error and cancel.
@@ -250,19 +265,19 @@ class Datatrans extends OffsitePaymentGatewayBase {
         '%details' => $post_data['errorDetail'],
         '%order_id' => $order->id(),
       ]);
-      return new Response('', 400);
+      return FALSE;
     }
 
     if ($post_data['status'] == 'cancel') {
       $this->logger->info('The user canceled the authorisation process for order %order_id', [
         '%order_id' => $order->id(),
       ]);
-      return new Response('', 400);
+      return FALSE;
     }
 
     // Security levels.
     if (empty($post_data['security_level']) || $post_data['security_level'] != $gateway_config['security_level']) {
-      return new Response('', 400);
+      return FALSE;
     }
 
     // If security level 2 is configured then generate and use a sign.
@@ -276,41 +291,48 @@ class Datatrans extends OffsitePaymentGatewayBase {
           '%error_code' => $post_data['errorCode'],
           '%details' => $post_data['errorDetail']
         ]);
-        return new Response('', 400);
+        return FALSE;
       }
     }
 
-    // Process the payment.
-    switch ($post_data['status']) {
-      case 'success':
-        $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
-        $payment = $payment_storage->create([
-          'state' => 'authorization',
-          // @todo Should we rather set price we get from datatrans?
-          'amount' => $order->getTotalPrice(),
-          'payment_gateway' => $this->entityId,
-          'order_id' => $order->id(),
-          'test' => $this->getMode() == 'test',
-          'remote_id' => $post_data['authorizationCode'],
-          'remote_state' => $post_data['responseMessage'],
-          'authorized' => REQUEST_TIME,
-        ]);
-        $payment->save();
-        break;
-
-      case 'error':
-        $this->logger->error('The payment gateway returned the error code %code (%details) for payment %order_id', [
-          '%code' => $post_data['errorCode'],
-          '%details' => $post_data['errorDetail'],
-          '%order_id' => $order->id(),
-        ]);
-        break;
-
-      case 'cancel':
-        $this->logger->info('The user canceled the authorisation process for payment %order_id', [
-          '%order_id' => $order->id(),
-        ]);
-        break;
+    if ($post_data['status'] == 'success') {
+      return TRUE;
     }
+
+    return FALSE;
+  }
+
+  /**
+   * Process the payment.
+   *
+   * @param array $post_data
+   *   Array with data received from Datatrans.
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   The order entity.
+   *
+   * @return \Drupal\Core\Entity\EntityInterface|bool
+   *   The payment entity or boolean false if the payment with
+   *   this authorisation code was already processed.
+   */
+  protected function processPayment(array $post_data, OrderInterface $order) {
+    $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
+
+    if ($payment_storage->loadByProperties(['remote_id' => $post_data['authorizationCode']])) {
+      return FALSE;
+    }
+
+    $payment = $payment_storage->create([
+      'state' => 'authorization',
+      'amount' => $order->getTotalPrice(),
+      'payment_gateway' => $this->entityId,
+      'order_id' => $order->id(),
+      'test' => $this->getMode() == 'test',
+      'remote_id' => $post_data['authorizationCode'],
+      'remote_state' => $post_data['responseMessage'],
+      'authorized' => REQUEST_TIME,
+    ]);
+    $payment->save();
+
+    return $payment;
   }
 }
