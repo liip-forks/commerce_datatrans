@@ -3,14 +3,14 @@
 namespace Drupal\commerce_datatrans\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_datatrans\DatatransHelper;
-use Drupal\commerce_order\Entity\Order;
 use Drupal\commerce_order\Entity\OrderInterface;
-use Drupal\commerce_payment\Entity\PaymentInterface;
+use Drupal\commerce_payment\CreditCard;
+use Drupal\commerce_payment\Entity\PaymentMethod;
+use Drupal\commerce_payment\Entity\PaymentMethodInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
 use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
-use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -29,7 +29,7 @@ use Symfony\Component\HttpFoundation\Response;
  *    forms = {
  *     "offsite-payment" = "Drupal\commerce_datatrans\PluginForm\DatatransForm",
  *   },
- *   payment_method_types = {"credit_card"},
+ *   payment_method_types = {"credit_card", "datatrans_alias"},
  *   credit_card_types = {
  *     "VIS", "ECA", "AMX", "BPY", "DIN", "DIS", "DEA", "DIB", "DII", "DNK",
  *     "DVI", "ELV", "ESY", "JCB", "JEL", "MAU", "MDP", "MFA", "MFG", "MFX",
@@ -333,6 +333,52 @@ class Datatrans extends OffsitePaymentGatewayBase {
     ]);
     $payment->save();
 
+    // Create a payment method if we use alias.
+    // @todo Figure out if that's the right approach indeed.
+    if ($post_data['useAlias'] === 'true') {
+      $this->createPaymentMethod($post_data);
+    }
+
     return $payment;
+  }
+
+
+  /**
+   * Create an alias payment method.
+   *
+   * @todo https://www.drupal.org/node/2838380
+   *
+   * @param array $payment_details
+   *   Array of payment details we get from Datatrans.
+   */
+  public function createPaymentMethod(array $payment_details) {
+    $payment_method = PaymentMethod::create([
+      'payment_gateway' => $this->pluginId,
+      'type' => 'datatrans_alias',
+      'reusable' => TRUE,
+      'pmethod' => $payment_details['pmethod'],
+      'masked_cc' => $payment_details['maskedCC'],
+      'expm' => $payment_details['expm'],
+      'expy' => $payment_details['expy'],
+    ]);
+
+    $expires = CreditCard::calculateExpirationTimestamp($payment_details['expm'], $payment_details['expy']);
+    $payment_method->setRemoteId($payment_details['aliasCC']);
+    $payment_method->setExpiresTime($expires);
+    $payment_method->save();
+  }
+
+  /**
+   * Delete an alias payment method.
+   *
+   * @todo https://www.drupal.org/node/2838380
+   *
+   * @param \Drupal\commerce_payment\Entity\PaymentMethodInterface $payment_method
+   */
+  public function deletePaymentMethod(PaymentMethodInterface $payment_method) {
+    // Delete the remote record here, throw an exception if it fails.
+    // See \Drupal\commerce_payment\Exception for the available exceptions.
+    // Delete the local entity.
+    $payment_method->delete();
   }
 }
