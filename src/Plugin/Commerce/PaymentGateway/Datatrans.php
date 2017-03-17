@@ -215,7 +215,6 @@ class Datatrans extends OffsitePaymentGatewayBase {
     }
 
     $this->processPayment($post_data, $order);
-    drupal_set_message($this->t('Payment was processed successfully'));
   }
 
   /**
@@ -327,7 +326,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
       'payment_gateway' => $this->entityId,
       'order_id' => $order->id(),
       'test' => $this->getMode() == 'test',
-      'remote_id' => $post_data['authorizationCode'],
+      'remote_id' => $post_data['uppTransactionId'],
       'remote_state' => $post_data['responseMessage'],
       'authorized' => REQUEST_TIME,
     ]);
@@ -336,7 +335,9 @@ class Datatrans extends OffsitePaymentGatewayBase {
     // Create a payment method if we use alias.
     // @todo Figure out if that's the right approach indeed.
     if ($post_data['useAlias'] === 'true') {
-      $this->createPaymentMethod($post_data);
+      $payment_method = $this->createPaymentMethod($post_data);
+      $order->set('payment_method', $payment_method);
+      $order->save();
     }
 
     return $payment;
@@ -350,6 +351,9 @@ class Datatrans extends OffsitePaymentGatewayBase {
    *
    * @param array $payment_details
    *   Array of payment details we get from Datatrans.
+   *
+   * @return \Drupal\commerce_payment\Entity\PaymentMethodInterface
+   *   The created payment method.
    */
   public function createPaymentMethod(array $payment_details) {
     $payment_method = PaymentMethod::create([
@@ -366,6 +370,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
     $payment_method->setRemoteId($payment_details['aliasCC']);
     $payment_method->setExpiresTime($expires);
     $payment_method->save();
+    return $payment_method;
   }
 
   /**
