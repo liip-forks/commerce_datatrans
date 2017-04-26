@@ -97,6 +97,8 @@ class Datatrans extends OffsitePaymentGatewayBase {
         'security_level' => 2,
         'sign' => '',
         'hmac_key' => '',
+        'use_hmac_2' => FALSE,
+        'hmac_key_2' => '',
     ] + parent::defaultConfiguration();
   }
 
@@ -172,7 +174,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
 
     $form['security']['hmac_key'] = [
       '#type' => 'textfield',
-      '#title' => t('HMAC Key'),
+      '#title' => $this->t('HMAC Key'),
       '#default_value' => $this->configuration['hmac_key'],
       '#description' => t('Used for security level 2'),
       '#states' => [
@@ -181,6 +183,28 @@ class Datatrans extends OffsitePaymentGatewayBase {
         ],
       ],
     ];
+
+    $form['security']['use_hmac_2'] = array(
+      '#type' => 'checkbox',
+      '#title' => $this->t('Use HMAC 2'),
+      '#default_value' => $this->configuration['use_hmac_2'],
+      '#states' => array(
+        'visible' => array(
+          ':input[name="configuration[security][security_level]"]' => ['value' => '2'],
+        ),
+      ),
+    );
+
+    $form['security']['hmac_key_2'] = array(
+      '#type' => 'textfield',
+      '#title' => $this->t('HMAC Key 2'),
+      '#default_value' => $this->configuration['hmac_key_2'],
+      '#states' => array(
+        'visible' => array(
+          ':input[name="configuration[security][security_level]"]' => ['value' => '2'],
+        ),
+      ),
+    );
 
     return $form;
   }
@@ -199,6 +223,8 @@ class Datatrans extends OffsitePaymentGatewayBase {
       $this->configuration['security_level'] = $values['security']['security_level'];
       $this->configuration['sign'] = $values['security']['sign'];
       $this->configuration['hmac_key'] = $values['security']['hmac_key'];
+      $this->configuration['use_hmac_2'] = $values['security']['use_hmac_2'];
+      $this->configuration['hmac_key_2'] = $values['security']['hmac_key_2'];
     }
   }
 
@@ -275,20 +301,21 @@ class Datatrans extends OffsitePaymentGatewayBase {
     }
 
     // Security levels.
+    // @todo Does this really need to be submitted/verified?
     if (empty($post_data['security_level']) || $post_data['security_level'] != $gateway_config['security_level']) {
       return FALSE;
     }
 
     // If security level 2 is configured then generate and use a sign.
     if ($gateway_config['security_level'] == 2) {
-      $sign2 = DatatransHelper::generateSign($gateway_config['hmac_key'], $gateway_config['merchant_id'], $post_data['amount'], $post_data['currency'], $post_data['uppTransactionId']);
+      // If a second hmac key is configured then use that to sign.
+      $key = $gateway_config['use_hmac_2'] ? $gateway_config['hmac_key_2'] : $gateway_config['hmac_key'];
+      $sign2 = DatatransHelper::generateSign($key, $gateway_config['merchant_id'], $post_data['amount'], $post_data['currency'], $post_data['uppTransactionId']);
 
       // Check for correct sign.
       if (empty($post_data['sign2']) || $sign2 != $post_data['sign2']) {
-        $this->logger->warning('Detected non matching signs while processing order %order_id (Error code %error_code: %details)', [
+        $this->logger->warning('Detected non matching signs while processing order %order_id.', [
           '%order_id' => $order->id(),
-          '%error_code' => $post_data['errorCode'],
-          '%details' => $post_data['errorDetail']
         ]);
         return FALSE;
       }
