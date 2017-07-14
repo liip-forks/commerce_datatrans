@@ -11,6 +11,7 @@ use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
 use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -62,11 +63,13 @@ class Datatrans extends OffsitePaymentGatewayBase {
    *   The payment type manager.
    * @param \Drupal\commerce_payment\PaymentMethodTypeManager $payment_method_type_manager
    *   The payment method type manager.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory service.
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, LoggerChannelFactoryInterface $logger_factory) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, TimeInterface $time, LoggerChannelFactoryInterface $logger_factory) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager, $time);
     $this->logger = $logger_factory->get('commerce_datatrans');
   }
 
@@ -81,6 +84,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
       $container->get('entity_type.manager'),
       $container->get('plugin.manager.commerce_payment_type'),
       $container->get('plugin.manager.commerce_payment_method_type'),
+      $container->get('datetime.time'),
       $container->get('logger.factory')
     );
   }
@@ -355,7 +359,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
       'test' => $this->getMode() == 'test',
       'remote_id' => $post_data['uppTransactionId'],
       'remote_state' => $post_data['responseMessage'],
-      'authorized' => REQUEST_TIME,
+      'authorized' => $this->time->getRequestTime(),
     ]);
     $payment->save();
 
