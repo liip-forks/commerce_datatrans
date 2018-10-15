@@ -364,8 +364,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
     $payment->save();
 
     // Create a payment method if we use alias.
-    // @todo Figure out if that's the right approach indeed.
-    if ($post_data['useAlias'] === 'true') {
+    if (isset($post_data['useAlias']) && $post_data['useAlias'] === 'true') {
       $payment_method = $this->createPaymentMethod($post_data);
       $order->set('payment_method', $payment_method);
       $order->save();
