@@ -248,6 +248,25 @@ class Datatrans extends OffsitePaymentGatewayBase {
   }
 
   /**
+   * Complete the order pending payment.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   */
+  protected function completeOrderPendingPayment(OrderInterface $order) {
+
+    $step_id = $order->get('checkout_step')->first()->getValue()['value'];
+
+    $next_step_id = ($step_id == 'payment') ? 'complete' : NULL;
+
+    if ($next_step_id !== NULL) {
+      $order->set('checkout_step', $next_step_id);
+      $this->onOrderStepChange($order, $next_step_id);
+      $order->save();
+    }
+
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function onNotify(Request $request) {
@@ -261,9 +280,38 @@ class Datatrans extends OffsitePaymentGatewayBase {
 
     if ($this->validateResponseData($post_data, $order)) {
       $this->processPayment($post_data, $order);
+      $this->completeOrderPendingPayment($order);
     }
     else {
       return new Response('', 400);
+    }
+  }
+
+  /**
+   * Reacts to the current step changing.
+   *
+   * Called before saving the order and redirecting.
+   *
+   * Handles the following logic
+   * 1) Locks the order before the payment page,
+   * 2) Unlocks the order when leaving the payment page
+   * 3) Places the order before the complete page.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   * @param string $step_id
+   *   The new step ID.
+   */
+  protected function onOrderStepChange(OrderInterface $order, $step_id) {
+    // Lock the order while on the 'payment' checkout step. Unlock elsewhere.
+    if ($step_id == 'payment') {
+      $order->lock();
+    }
+    elseif ($step_id != 'payment') {
+      $order->unlock();
+    }
+    // Place the order.
+    if ($step_id == 'complete' && $order->getState()->getId() == 'draft') {
+      $order->getState()->applyTransitionById('place');
     }
   }
 
@@ -307,7 +355,7 @@ class Datatrans extends OffsitePaymentGatewayBase {
     // Security levels.
     // @todo Does this really need to be submitted/verified?
     if (empty($post_data['security_level']) || $post_data['security_level'] != $gateway_config['security_level']) {
-      return FALSE;
+      // Return FALSE; //Note: disabled as webhook is not returning security_level.
     }
 
     // If security level 2 is configured then generate and use a sign.
